@@ -9,17 +9,80 @@ import yfinance as yf
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
-DEFAULT_TICKERS = ["SPY", "QQQ", "IWM", "XLF", "XLK", "XLV", "XLE", "XLI", "XLP", "XLY", "XLU"]
+BENCHMARK_TICKER = "SPY"
+DEFAULT_START_DATE = "2018-01-01"
+DEFAULT_TICKERS = [
+    "AAPL",
+    "MSFT",
+    "AMZN",
+    "GOOGL",
+    "META",
+    "NVDA",
+    "TSLA",
+    "JPM",
+    "V",
+    "MA",
+    "UNH",
+    "XOM",
+    "JNJ",
+    "WMT",
+    "PG",
+    "HD",
+    "COST",
+    "ABBV",
+    "CVX",
+    "BAC",
+    "KO",
+    "PEP",
+    "AVGO",
+    "MRK",
+    "TMO",
+    "ORCL",
+    "MCD",
+    "CRM",
+    "ADBE",
+    "ACN",
+    "LIN",
+    "AMD",
+    "CSCO",
+    "NFLX",
+    "QCOM",
+    "ABT",
+    "DHR",
+    "WFC",
+    "TXN",
+    "INTC",
+    "PM",
+    "GE",
+    "IBM",
+    "CAT",
+    "GS",
+    "DIS",
+    "AMGN",
+    "NOW",
+    "ISRG",
+    "BKNG",
+    "SPGI",
+    "HON",
+    "INTU",
+    "BLK",
+    "SYK",
+    "C",
+    "PLD",
+    "MDT",
+]
 
 
 def download_market_data(
     tickers: Iterable[str] | None = None,
-    start_date: str = "2015-01-01",
+    start_date: str = DEFAULT_START_DATE,
     end_date: str | None = None,
     output_path: Path | None = None,
+    benchmark_ticker: str = BENCHMARK_TICKER,
 ) -> pd.DataFrame:
-    """Download adjusted OHLCV data and save a cleaned long-form dataset."""
-    symbols = list(tickers or DEFAULT_TICKERS)
+    """Download adjusted OHLCV data for the requested universe and benchmark."""
+    universe = list(dict.fromkeys(tickers or DEFAULT_TICKERS))
+    symbols = universe if benchmark_ticker in universe else universe + [benchmark_ticker]
     target_path = output_path or DATA_DIR / "market_data.csv"
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -37,8 +100,9 @@ def download_market_data(
 
     if isinstance(raw.columns, pd.MultiIndex):
         long_frames = []
+        available_tickers = set(raw.columns.get_level_values(0))
         for ticker in symbols:
-            if ticker not in raw.columns.get_level_values(0):
+            if ticker not in available_tickers:
                 continue
             frame = raw[ticker].copy()
             frame["asset"] = ticker
@@ -53,11 +117,14 @@ def download_market_data(
 
     rename_map = {"adj close": "close", "date": "date", "capital gains": "capital_gains", "stock splits": "stock_splits"}
     data = data.rename(columns=rename_map)
+    data = data.loc[:, ~data.columns.duplicated()].copy()
     keep_cols = [col for col in ["date", "asset", "open", "high", "low", "close", "volume"] if col in data.columns]
     data = data[keep_cols].copy()
     data["date"] = pd.to_datetime(data["date"])
     data = data.sort_values(["asset", "date"]).dropna(subset=["close"])
     data["volume"] = data["volume"].fillna(0.0)
+    if benchmark_ticker not in set(data["asset"]):
+        raise ValueError(f"Benchmark ticker {benchmark_ticker} was not available in the downloaded data.")
     data.to_csv(target_path, index=False)
     return data
 

@@ -1,124 +1,178 @@
 # quant-signal-forecasting
 
-`quant-signal-forecasting` is a compact quant research project for cross-sectional ETF return forecasting and long/short portfolio backtesting. It demonstrates a full research loop: market data ingestion, leakage-aware feature engineering, forward-return labeling, walk-forward model evaluation, signal ranking, and transaction-cost-aware backtesting.
+`quant-signal-forecasting` is a portfolio-ready quant research project for cross-sectional equity signal modeling. v2 extends the original ETF demo into a more realistic research workflow with a larger equity universe, rank-based targets, richer factor-style features, configurable long/short portfolio construction, and benchmark-aware evaluation.
 
 ## Overview
 
-This repository is designed as a portfolio-quality research sample rather than a production trading system. The focus is on showing sound research process:
+This repository is designed to demonstrate research process rather than marketable alpha. The emphasis is on:
 
-- chronological validation instead of random splits
-- explicit leakage and alignment review
-- comparable baseline and nonlinear models
-- saved artifacts for model review and backtest inspection
+- leakage-aware feature and label construction
+- chronological walk-forward validation
+- cross-sectional ranking rather than point forecast marketing
+- realistic interpretation of weak but plausible signal evidence
+- clear artifacts for review: metrics, notebook analysis, and benchmark-aware backtests
 
 ## Key Takeaways
 
-- `ridge` currently outperforms `tree` and `mlp` on this ETF setup.
-- The predictive edge is modest, which is more credible than a dramatic backtest.
-- The backtest is research-grade, not execution-grade: it is useful for signal evaluation, but it is still a simplified trading approximation.
+- v2 moves the project from ETF forecasting into a more relevant cross-sectional equity research setup.
+- Cross-sectional rank targets are more aligned with quant portfolio construction than raw return regression alone.
+- The latest verified v2 run shows weak but plausible signal quality: slightly positive mean IC and directionally sensible quantile spreads, but negative after-cost performance versus `SPY`.
+- This is a research framework, not a deployable strategy, and the README is written to reflect that directly.
+
+## What Changed In v2
+
+Compared with v1, the project now supports:
+
+- a larger liquid U.S. equity universe instead of only sector/index ETFs
+- cross-sectional ranking targets in addition to raw forward-return targets
+- richer research features including rolling beta, rolling correlation, downside volatility, volatility-adjusted momentum, and cross-sectional z-scores
+- quantile portfolios, signal-weighted portfolios, configurable gross exposure, and turnover controls
+- less overlapping portfolio construction via configurable rebalance frequency
+- stronger evaluation artifacts including IC by date, quantile return spreads, rolling Sharpe, and benchmark comparison
 
 ## Research Question
 
-Can a lightweight set of price-and-volume features generate a usable cross-sectional signal across major sector and index ETFs, and how do simple linear, tree-based, and neural baselines compare under walk-forward evaluation?
+Can simple tabular models learn a useful cross-sectional signal from price-and-volume features across a liquid U.S. equity universe, and is a rank-based learning target more useful for long/short research than forecasting raw forward returns directly?
 
-## Data, Features, And Targets
+## Why Ranking Matters
 
-- Data source: `yfinance`
-- Universe: `SPY`, `QQQ`, `IWM`, `XLF`, `XLK`, `XLV`, `XLE`, `XLI`, `XLP`, `XLY`, `XLU`
-- Frequency: daily adjusted OHLCV
-- Default history: `2015-01-01` to present
+For cross-sectional equity research, the exact return forecast is often less important than the relative ordering of names on each date. Rank-based targets are more aligned with how many quant portfolios are actually built:
 
-Feature set:
+- signals are used to sort names into long and short baskets
+- small forecast misspecification matters less if relative ordering is preserved
+- information coefficient and quantile spread are often more informative than raw error alone
+
+v2 therefore supports both raw forward-return targets and cross-sectional rank targets, with `cross_sectional_rank` as the default research path.
+
+## Default v2 Setup
+
+- Universe: 58 liquid U.S. large-cap equities
+- Benchmark: `SPY`
+- Default history: `2018-01-01` to present
+- Label horizon: next 5 trading days
+- Default target: cross-sectional rank of next 5-day forward return
+- Default model: `ridge`
+- Default portfolio: signal-weighted long top decile / short bottom decile
+- Default controls: one-day implementation lag, turnover cap, transaction costs, benchmark-aware reporting
+
+## Methodology
+
+### Universe
+
+The v2 universe is a laptop-friendly basket of liquid U.S. large-cap stocks across technology, healthcare, financials, consumer, industrials, and energy. The benchmark `SPY` is downloaded alongside the universe for relative features and benchmark comparison.
+
+### Features
+
+The feature set now includes both time-series and cross-sectional signals:
 
 - trailing returns: `1d`, `5d`, `10d`, `20d`
 - rolling volatility: `5d`, `20d`
-- momentum: `10d`, `20d`
-- moving-average gaps: `10d`, `20d`
+- momentum and moving-average gaps
 - rolling volume z-score
 - rolling Sharpe proxy
 - drawdown from 20-day high
-- optional market-relative return vs `SPY`
+- downside volatility
+- rolling beta to `SPY`
+- rolling correlation to `SPY`
+- volatility-adjusted momentum
+- cross-sectional z-scored versions of selected features
 
-Targets:
+### Targets
 
-- regression: next 5-day forward return
-- classification: next 5-day return greater than zero
+Supported targets:
 
-## Validation Design
+- `forward_return`: raw next 5-day return
+- `cross_sectional_rank`: daily cross-sectional rank of next 5-day return
+- `forward_return_binary`: classification label for positive next 5-day return
 
-The current implementation was explicitly reviewed for lookahead bias.
+### Validation And Leakage Controls
 
-- Features are built from trailing windows and then shifted by one day before model use.
-- Labels are forward returns built after feature construction.
-- Train, validation, and test windows are chronological and expanding.
-- Portfolio positions are lagged by one day before return application.
-- Transaction costs are applied using realized turnover.
+The core chronology controls from v1 remain in place:
 
-Leakage review summary:
+- features use trailing windows only
+- model features are shifted by one day before training
+- train/validation/test splits are expanding and chronological
+- positions are lagged by one day before PnL application
+- the written leakage review remains available in [outputs/metrics/leakage_alignment_audit.md](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/leakage_alignment_audit.md)
 
-- No explicit lookahead bug was found in the current pipeline.
-- The main realism caveat is execution approximation, not leakage.
+## Key Results From The Verified v2 Run
 
-See [outputs/metrics/leakage_alignment_audit.md](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/leakage_alignment_audit.md) for the written audit.
+The latest verified v2 run used:
 
-## Models
+```bash
+python src/train.py --model ridge --task regression --target-mode cross_sectional_rank
+```
 
-- `ridge`: linear baseline using `Ridge`
-- `tree`: `XGBoost` when available, otherwise sklearn gradient boosting
-- `mlp`: PyTorch MLP with early stopping and checkpointing, otherwise sklearn MLP fallback
+Actual outputs from that run:
 
-All reported results below come from actual walk-forward regression runs saved in `outputs/`.
+- prediction metrics in `outputs/metrics/ridge_regression_cross_sectional_rank_metrics_summary.csv`
+- backtest metrics in `outputs/metrics/ridge_regression_cross_sectional_rank_backtest_metrics.csv`
+- IC series in `outputs/metrics/ridge_regression_cross_sectional_rank_ic_by_date.csv`
+- quantile return summaries in `outputs/metrics/ridge_regression_cross_sectional_rank_quantile_returns.csv`
+- quantile spread series in `outputs/metrics/ridge_regression_cross_sectional_rank_quantile_spread_returns.csv`
 
-## Key Results
+Headline metrics from the verified run:
 
-On this setup, `ridge` is the strongest model overall. Its signal is still weak in absolute terms, but it is the most stable of the three and the only model with positive after-cost backtest performance in the full run.
+| Metric | Value |
+| --- | ---: |
+| RMSE | 0.2891 |
+| MAE | 0.2501 |
+| Target Correlation | 0.0146 |
+| Spearman Rank Correlation | 0.0113 |
+| Mean Daily IC | 0.0088 |
+| Annualized Return | -0.0105 |
+| Annualized Volatility | 0.0904 |
+| Sharpe Ratio | -0.1160 |
+| Max Drawdown | -0.3469 |
+| Average Turnover | 0.0323 |
+| Benchmark Annualized Return (`SPY`) | 0.1538 |
 
-| Model | RMSE | MAE | Corr | Spearman | Mean IC | Ann. Return | Ann. Vol | Sharpe | Max DD | Turnover |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Ridge | 0.0287 | 0.0201 | 0.0243 | 0.0612 | 0.0071 | 0.2001 | 0.2652 | 0.7544 | -0.7730 | 0.4185 |
-| Tree | 0.0295 | 0.0204 | 0.0027 | 0.0509 | 0.0022 | -0.0480 | 0.2269 | -0.2117 | -0.7492 | 0.5136 |
-| MLP | 0.0298 | 0.0206 | 0.0391 | 0.0367 | -0.0068 | -0.0854 | 0.2223 | -0.3840 | -0.7987 | 0.5308 |
+Quantile results are directionally encouraging:
 
-Source artifacts:
+- mean realized return increases from the bottom decile to the top decile
+- top decile mean return: `0.00537`
+- bottom decile mean return: `0.00383`
 
-- [outputs/metrics/model_comparison_regression.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/model_comparison_regression.csv)
-- [outputs/metrics/model_comparison_regression.md](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/model_comparison_regression.md)
-
-## Model Comparison
-
-What stands out from the comparison:
-
-- `ridge` has the best RMSE, MAE, rank correlation, mean IC, and Sharpe ratio.
-- `tree` and `mlp` do not beat the linear baseline out of sample on this feature set.
-- The more flexible models carry higher turnover and still fail to convert into better after-cost outcomes.
+But the after-cost portfolio result is still negative in this default configuration, which is the correct interpretation to keep front and center.
 
 ## Interpretation
 
-- The signal appears real enough to study, but not strong enough to overstate.
-- The best model here is the simplest one, which is a useful research result in itself.
-- Large drawdowns across all three models are a reminder that weak cross-sectional predictability does not automatically translate into a robust tradable strategy.
-- No result in the full default-history run looks suspiciously strong.
+What v2 improves:
 
-## Portfolio-Facing Artifacts
+- the research setup is much closer to a real cross-sectional equity signal pipeline
+- rank-based targets are more aligned with long/short portfolio construction
+- the new feature set better reflects common quant factor engineering patterns
+- the backtest now uses next-day realized returns with held positions instead of booking only overlapping horizon returns
 
-Tracked artifacts that support the narrative:
+What the latest results say:
 
-- [outputs/figures/ridge_regression_equity_curve.png](/Users/sahil/Desktop/quant-signal-forecasting/outputs/figures/ridge_regression_equity_curve.png)
-- [outputs/figures/ridge_regression_predicted_vs_realized.png](/Users/sahil/Desktop/quant-signal-forecasting/outputs/figures/ridge_regression_predicted_vs_realized.png)
-- [outputs/metrics/model_comparison_regression.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/model_comparison_regression.csv)
-- [outputs/metrics/leakage_alignment_audit.md](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/leakage_alignment_audit.md)
-- [notebooks/model_review.ipynb](/Users/sahil/Desktop/quant-signal-forecasting/notebooks/model_review.ipynb)
+- the signal is weak but not random: mean IC is slightly positive and quantile returns are directionally monotonic
+- the default ridge rank model is not yet strong enough to overcome costs and beat the benchmark
+- v2 is therefore a stronger research project even though the default backtest outcome is not flattering
 
-The working tree may also contain additional generated figures and metrics from local runs that are intentionally not tracked in git.
+That is a stronger portfolio outcome than an unrealistically strong backtest claim, because it shows research depth and technical honesty.
+
+## Portfolio Construction In v2
+
+Portfolio construction now supports:
+
+- `topk` or `quantile` portfolio selection
+- `equal` or `signal` weighting
+- configurable gross exposure
+- configurable turnover cap
+- configurable rebalance frequency
+
+The default v2 run uses a signal-weighted quantile portfolio with a turnover cap, which is more realistic than the original overlapping equal-weight approximation.
 
 ## Limitations
 
-- `yfinance` is convenient for research, not a production-grade market data source.
-- The ETF universe is fixed and small, so this is not a full universe-selection study.
-- The backtest is research-grade, not execution-grade.
-- Returns are evaluated with a simplified holding approximation rather than a path-accurate execution simulator.
-- Transaction costs are linear turnover costs only and do not include slippage, borrow costs, or financing.
-- No hyperparameter search or nested walk-forward tuning is included.
+Remaining realism caveats are explicit:
+
+- this is still a research-grade backtest, not an execution-grade simulator
+- `yfinance` is acceptable for research demos but not institutional data engineering
+- benchmark comparison versus `SPY` is informative, but not a like-for-like comparison against a market-neutral strategy
+- no borrow fees, slippage model, or path-level execution engine is included
+- no hyperparameter search or nested research protocol is included
 
 ## How To Run
 
@@ -130,22 +184,49 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run the regression models:
+Run the default v2 experiment:
 
 ```bash
-python src/train.py --model ridge --task regression
-python src/train.py --model tree --task regression
-python src/train.py --model mlp --task regression
+python src/train.py --model ridge --task regression --target-mode cross_sectional_rank
 ```
 
-Review saved outputs:
+Run raw forward-return regression instead of rank-based learning:
 
 ```bash
-jupyter notebook notebooks/model_review.ipynb
+python src/train.py --model ridge --task regression --target-mode forward_return
 ```
+
+Try an alternative portfolio configuration:
+
+```bash
+python src/train.py --model ridge --task regression --target-mode cross_sectional_rank --portfolio-mode topk --top-k 10 --weight-scheme equal --max-turnover 0.25
+```
+
+## Key Files
+
+- [src/train.py](/Users/sahil/Desktop/quant-signal-forecasting/src/train.py)
+- [src/features.py](/Users/sahil/Desktop/quant-signal-forecasting/src/features.py)
+- [src/labels.py](/Users/sahil/Desktop/quant-signal-forecasting/src/labels.py)
+- [src/portfolio.py](/Users/sahil/Desktop/quant-signal-forecasting/src/portfolio.py)
+- [src/backtest.py](/Users/sahil/Desktop/quant-signal-forecasting/src/backtest.py)
+- [outputs/metrics/ridge_regression_cross_sectional_rank_metrics_summary.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_metrics_summary.csv)
+- [outputs/metrics/ridge_regression_cross_sectional_rank_backtest_metrics.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_backtest_metrics.csv)
+- [outputs/metrics/ridge_regression_cross_sectional_rank_ic_by_date.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_ic_by_date.csv)
+- [outputs/metrics/ridge_regression_cross_sectional_rank_quantile_returns.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_quantile_returns.csv)
+- [outputs/metrics/ridge_regression_cross_sectional_rank_quantile_spread_returns.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_quantile_spread_returns.csv)
 
 ## Resume-Ready Highlights
 
-- Built an end-to-end quant research pipeline for ETF return forecasting, including data ingestion, feature engineering, forward-return labeling, walk-forward model evaluation, and portfolio backtesting.
-- Implemented leakage-aware validation and documented alignment assumptions through a dedicated audit of features, labels, prediction timing, and portfolio construction.
-- Compared linear, tree-based, and neural baselines on a common research setup and showed that a simple ridge model outperformed more flexible alternatives out of sample.
+- Built an end-to-end cross-sectional equity signal research pipeline spanning data ingestion, feature engineering, rank-target labeling, walk-forward training, portfolio construction, and benchmark-aware backtesting.
+- Extended a simple ETF forecasting demo into a more realistic quant research workflow with cross-sectional ranking targets, factor-style features, and configurable long/short portfolio mechanics.
+- Evaluated weak but plausible signal quality using information coefficient, quantile spread analysis, and benchmark comparison while explicitly documenting leakage controls and realism caveats.
+
+## What Still Belongs In v3
+
+If this were taken beyond portfolio/demo scope, the next steps would be:
+
+- more robust universe maintenance and delisting handling
+- sector/industry neutralization
+- benchmark-relative and residual return targets
+- rolling hyperparameter search
+- a cleaner separation between signal evaluation and execution simulation
