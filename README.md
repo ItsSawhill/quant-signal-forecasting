@@ -1,101 +1,135 @@
 # quant-signal-forecasting
 
-`quant-signal-forecasting` is a research-style Python project for cross-sectional market signal forecasting and portfolio backtesting. It downloads ETF market data, engineers predictive features with strict no-lookahead alignment, trains baseline and nonlinear models, converts forecasts into long/short portfolio signals, and saves artifacts for downstream analysis.
+`quant-signal-forecasting` is a compact quant research project for cross-sectional ETF signal forecasting and long/short portfolio backtesting. It downloads daily market data, engineers leakage-aware features, trains chronological forecasting models, converts predictions into ranked portfolio signals, and saves research artifacts for review.
 
-## Motivation
+## Why This Repo Exists
 
-This repo is designed to resemble a compact quant research workflow:
+The goal is not to claim production-ready alpha. The goal is to show a credible research workflow:
 
-- ingest liquid market data
-- turn price and volume history into predictive features
-- define forward-return labels
-- evaluate models using time-aware validation
-- translate model scores into tradable portfolio signals
-- backtest a simple market-neutral strategy with transaction costs
+- data ingestion from a public source
+- leakage-aware feature and label construction
+- walk-forward model evaluation
+- cross-sectional signal ranking
+- transaction-cost-aware backtesting
+- artifact generation for review and comparison
 
-The defaults are intentionally lightweight enough to run on a laptop while still reflecting the structure of a real research pipeline.
+The implementation is intentionally lightweight enough to run on a laptop while still reflecting the structure of a real quant research exercise.
 
-## Data Source
+## Data
 
-The project uses `yfinance` to download adjusted daily OHLCV data for a default ETF universe:
+- Source: `yfinance`
+- Universe: `SPY`, `QQQ`, `IWM`, `XLF`, `XLK`, `XLV`, `XLE`, `XLI`, `XLP`, `XLY`, `XLU`
+- Frequency: daily adjusted OHLCV
+- Default start date: `2015-01-01`
 
-- `SPY`, `QQQ`, `IWM`
-- `XLF`, `XLK`, `XLV`, `XLE`
-- `XLI`, `XLP`, `XLY`, `XLU`
+Downloaded data is saved to `data/market_data.csv`. The joined modeling dataset is saved to `data/modeling_dataset.csv`.
 
-The default date range is `2015-01-01` through today. Downloaded and cleaned market data is saved to `data/market_data.csv`.
+## Features And Labels
 
-## Feature Set
-
-Features are built per asset using only information available up to each date:
+Features are engineered per asset using trailing information only:
 
 - trailing returns: `1d`, `5d`, `10d`, `20d`
 - rolling volatility: `5d`, `20d`
 - momentum: `10d`, `20d`
-- moving-average gap vs `10d` and `20d` averages
+- moving-average gaps: `10d`, `20d`
 - rolling volume z-score
 - rolling Sharpe proxy
-- drawdown from rolling `20d` high
+- drawdown from 20-day high
 - optional market-relative return vs `SPY`
 
-## Labels
+Targets:
 
-Two label modes are supported:
+- regression: next 5-day forward return
+- classification: next 5-day return greater than zero
 
-- regression: next `5`-day forward return
-- classification: whether next `5`-day forward return is positive
+## Models
 
-Labels are aligned by date and asset and saved alongside the modeling dataset.
+- `ridge`: `Ridge` / `LogisticRegression`
+- `tree`: `XGBoost` if available, otherwise sklearn gradient boosting
+- `mlp`: PyTorch MLP with early stopping and checkpointing, otherwise sklearn MLP fallback
 
-## Modeling Approach
+All training uses chronological expanding-window evaluation. There is no random train/test split.
 
-The training pipeline supports three model families:
+## Leakage And Alignment Check
 
-- linear baseline: `Ridge` or `LogisticRegression`
-- tree model: `XGBoost` if installed, otherwise sklearn gradient boosting
-- neural net: PyTorch MLP with early stopping and checkpointing when `torch` is available, otherwise sklearn MLP fallback
+The current code path was reviewed specifically for lookahead bias.
 
-Each model is trained using a time-based split. Predictions are generated in a walk-forward / expanding-window manner so the test slice always occurs after the training slice.
+- Feature engineering is based on trailing windows and then shifted by one day in [src/features.py](/Users/sahil/Desktop/quant-signal-forecasting/src/features.py), so model inputs at date `t` only use information available through `t-1`.
+- Labels in [src/labels.py](/Users/sahil/Desktop/quant-signal-forecasting/src/labels.py) use `close[t+5] / close[t] - 1`, which is a standard forward-return target.
+- Walk-forward prediction in [src/train.py](/Users/sahil/Desktop/quant-signal-forecasting/src/train.py) keeps validation and test periods strictly after training periods.
+- Portfolio weights in [src/portfolio.py](/Users/sahil/Desktop/quant-signal-forecasting/src/portfolio.py) are shifted by one day before being applied, so positions are implemented with a lag.
+- Backtest PnL in [src/backtest.py](/Users/sahil/Desktop/quant-signal-forecasting/src/backtest.py) uses lagged positions times forward returns and applies linear turnover costs.
 
-## Validation Design
+Conclusion:
 
-The repo avoids leakage by:
+- I did not find an explicit lookahead bug in the current pipeline.
+- The main remaining realism caveat is not leakage but approximation: the strategy uses overlapping 5-day forward returns together with daily rebalancing and rolling average holdings. That is acceptable for a lightweight research project, but it is still a simplified execution model rather than a path-accurate portfolio simulator.
 
-- building features from trailing windows only
-- shifting labels forward by the holding horizon
-- using expanding-window training with chronological test blocks
-- applying portfolio positions with a one-day implementation lag
+## Key Results
 
-This design keeps the backtest closer to how a research forecast would actually be deployed.
+The following results are from actual generated outputs in `outputs/metrics/model_comparison_regression.csv` after running the full regression pipeline for all three models on the default ETF universe.
 
-## Backtest Logic
+| Model | RMSE | MAE | Corr | Spearman | Mean IC | Ann. Return | Ann. Vol | Sharpe | Max DD | Turnover |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ridge | 0.0287 | 0.0201 | 0.0243 | 0.0612 | 0.0071 | 0.2001 | 0.2652 | 0.7544 | -0.7730 | 0.4185 |
+| Tree | 0.0295 | 0.0204 | 0.0027 | 0.0509 | 0.0022 | -0.0480 | 0.2269 | -0.2117 | -0.7492 | 0.5136 |
+| MLP | 0.0298 | 0.0206 | 0.0391 | 0.0367 | -0.0068 | -0.0854 | 0.2223 | -0.3840 | -0.7987 | 0.5308 |
 
-Portfolio construction ranks assets each day by model prediction:
+## Brief Interpretation
 
-- long top `3`
-- short bottom `3`
-- equal-weight long/short
-- configurable transaction costs
-- configurable holding horizon
+- `ridge` is the strongest of the three models on this run. The edge is modest rather than dramatic, which is more believable for a simple feature set on liquid ETFs.
+- `tree` and `mlp` do not improve on the linear baseline out of sample and both are negative after transaction costs.
+- The drawdowns are large across all models. That weakens the practical attractiveness of the strategy even when prediction metrics are mildly positive.
+- No full-sample result looks suspiciously strong. Earlier short-window sanity checks looked much better, but the full default-history run with compounded annualization is materially more conservative.
 
-The backtest computes:
+## Model Comparison Artifacts
 
-- gross and net daily returns
-- annualized return
-- annualized volatility
-- Sharpe ratio
-- max drawdown
-- turnover
+Generated artifacts include:
 
-## Outputs
+- `outputs/metrics/model_comparison_regression.csv`
+- `outputs/metrics/model_comparison_regression.md`
+- `outputs/predictions/*_regression_predictions.csv`
+- `outputs/metrics/*_regression_metrics_summary.csv`
+- `outputs/metrics/*_regression_backtest_metrics.csv`
+- `outputs/metrics/*_regression_portfolio_returns.csv`
+- `outputs/figures/*_regression_equity_curve.png`
+- `outputs/figures/*_regression_predicted_vs_realized.png`
+- `outputs/figures/tree_regression_feature_importance.png`
 
-Running the pipeline writes artifacts to:
+## Limitations
 
-- `outputs/predictions/`: out-of-sample predictions
-- `outputs/metrics/`: evaluation metrics, backtest stats, portfolio returns, positions
-- `outputs/figures/`: equity curve, predicted-vs-realized plot, tree feature importances when available
+- `yfinance` is convenient for research but not a production-grade market data source.
+- The ETF universe is fixed and hand-selected, so this is not a full universe-selection study.
+- The cost model is simple linear turnover cost and does not include slippage, borrow costs, financing, or market impact.
+- The backtest uses forward returns instead of full path-level holdings and fills, so it is a research approximation rather than a full execution simulator.
+- No hyperparameter search or nested walk-forward tuning is included.
+- The current repo is aimed at credibility and clarity, not maximizing performance.
 
-## Repo Structure
+## Exact Commands To Reproduce Outputs
+
+Install dependencies:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Run the three regression models:
+
+```bash
+python src/train.py --model ridge --task regression
+python src/train.py --model tree --task regression
+python src/train.py --model mlp --task regression
+```
+
+Open the notebook for result review:
+
+```bash
+jupyter notebook notebooks/model_review.ipynb
+```
+
+## Repository Layout
 
 ```text
 quant-signal-forecasting/
@@ -118,48 +152,10 @@ quant-signal-forecasting/
 └── requirements.txt
 ```
 
-## How To Run
-
-1. Create a virtual environment and install dependencies.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-2. Run the default regression pipeline.
-
-```bash
-python src/train.py
-```
-
-3. Run an alternative model or classification task.
-
-```bash
-python src/train.py --model tree --task regression
-python src/train.py --model mlp --task classification
-```
-
-## Useful Commands
-
-```bash
-python src/train.py --tickers SPY QQQ IWM XLF XLK XLV XLE XLI XLP XLY XLU
-python src/train.py --start-date 2018-01-01 --horizon 5 --top-k 3 --transaction-cost-bps 5
-python src/train.py --model tree --test-size 63 --min-train-size 252
-```
-
-## Notes
-
-- `xgboost` is used automatically when installed; otherwise the tree model falls back to sklearn gradient boosting.
-- The neural net uses a PyTorch MLP with early stopping and checkpointing when `torch` is available. If not, sklearn MLP is used so the pipeline remains runnable.
-- Output files are overwritten on each run for the selected configuration.
-
 ## Future Improvements
 
-- add richer macro, factor, or alternative data inputs
-- support multi-horizon and multi-task targets
-- add probability calibration and position sizing
-- introduce more realistic slippage and borrow-cost modeling
-- expand to rolling hyperparameter search
-- add notebook-based experiment tracking and report generation
+- add path-accurate holding-period simulation instead of return-based approximation
+- expand the feature set with regime, factor, and macro features
+- add rolling hyperparameter search with a stricter research protocol
+- separate signal evaluation from portfolio design more cleanly
+- add benchmark comparisons and factor-neutralization checks
