@@ -1,0 +1,147 @@
+Build a complete Python project called quant-signal-forecasting for research-style market signal forecasting and portfolio backtesting.
+
+Goal:
+Create an end-to-end repo that downloads market data, engineers predictive features, creates forward-return labels, trains baseline and deep learning models, generates portfolio signals, backtests a simple strategy, and saves outputs for analysis.
+
+Project requirements:
+1. Use this repo structure:
+
+quant-signal-forecasting/
+├── data/
+├── notebooks/
+├── src/
+│   ├── data_loader.py
+│   ├── features.py
+│   ├── labels.py
+│   ├── models.py
+│   ├── train.py
+│   ├── evaluate.py
+│   ├── portfolio.py
+│   └── backtest.py
+├── outputs/
+│   ├── figures/
+│   ├── metrics/
+│   └── predictions/
+├── README.md
+├── requirements.txt
+
+2. Data:
+- Use yfinance to download adjusted OHLCV data
+- Default tickers:
+  SPY, QQQ, IWM, XLF, XLK, XLV, XLE, XLI, XLP, XLY, XLU
+- Default date range: 2015-01-01 to present
+- Save cleaned price data into data/
+
+3. Features:
+Implement feature engineering for each asset:
+- 1d, 5d, 10d, 20d returns
+- rolling volatility (5d, 20d)
+- 10d and 20d momentum
+- moving average gap vs 10d and 20d MA
+- rolling volume z-score
+- rolling Sharpe proxy
+- drawdown from 20d high
+- optional market-relative return vs SPY
+All features must avoid lookahead bias.
+
+4. Labels:
+Create target labels:
+- default: next 5-day forward return
+- also support binary target: whether next 5-day return > 0
+Save labels aligned by date and asset.
+
+5. Modeling:
+Implement:
+- baseline linear model (Ridge for regression or Logistic Regression for classification)
+- tree-based model (XGBoost if available, otherwise GradientBoosting)
+- PyTorch MLP for regression/classification
+The PyTorch model should:
+- accept tabular engineered features
+- support training/validation split by time
+- include early stopping
+- save best model checkpoint
+
+6. Training:
+- train with a proper time-based split, not random split
+- support walk-forward or expanding-window evaluation
+- train per date panel of asset-feature rows
+- save predictions to outputs/predictions/
+
+7. Evaluation:
+For regression:
+- RMSE
+- MAE
+- correlation between predicted and realized returns
+- Spearman rank correlation if possible
+For classification:
+- accuracy
+- precision
+- recall
+- ROC-AUC if applicable
+Also compute finance-oriented signal metrics:
+- daily information coefficient
+- mean IC
+- prediction bucket returns if possible
+Save all metrics to outputs/metrics/
+
+8. Portfolio construction:
+Convert model predictions into signals:
+- rank assets daily by prediction
+- long top 3, short bottom 3 by default
+- equal-weight long/short portfolio
+- configurable transaction cost
+- configurable holding horizon
+Save daily positions and returns.
+
+9. Backtest:
+Implement a simple daily rebalanced backtest:
+- compute gross and net returns
+- include transaction costs
+- compute annualized return, annualized volatility, Sharpe ratio, max drawdown, turnover
+- save results to outputs/metrics/
+- generate equity curve plot in outputs/figures/
+
+10. Outputs:
+Generate:
+- equity curve plot
+- predicted vs realized summary plot
+- feature importance plot for tree model if available
+- metrics summary CSV
+- predictions parquet or CSV
+- portfolio returns CSV
+
+11. Code quality:
+- modular, readable, production-style Python
+- docstrings and comments where useful
+- avoid unnecessary complexity
+- add a main runnable pipeline entry point or clear commands in README
+- make the code runnable locally with minimal setup
+
+12. README:
+Write a strong README with:
+- project overview
+- motivation
+- data source
+- feature set
+- modeling approach
+- validation design
+- backtest logic
+- outputs
+- how to run
+- future improvements
+Keep it recruiter-friendly and quant-oriented.
+
+Constraints:
+- avoid leakage
+- use fixed random seeds where applicable
+- keep defaults lightweight enough to run on a laptop
+- do not fabricate results in README
+- if a library is unavailable, gracefully fallback to sklearn alternatives
+
+Done when:
+- repo structure exists
+- all src files are implemented
+- README exists
+- requirements.txt exists
+- running the pipeline produces outputs in outputs/
+- summarize what was created and how to run it
