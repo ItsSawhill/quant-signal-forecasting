@@ -27,7 +27,9 @@ def run_backtest(portfolio_frame: pd.DataFrame, transaction_cost_bps: float = 5.
     daily_returns["net_return"] = daily_returns["gross_return"] - daily_returns["transaction_cost"]
     daily_returns["equity_curve"] = (1.0 + daily_returns["net_return"]).cumprod()
 
-    annualized_return = (1.0 + daily_returns["net_return"].mean()) ** 252 - 1.0
+    n_days = len(daily_returns)
+    ending_equity = float(daily_returns["equity_curve"].iloc[-1]) if n_days else 1.0
+    annualized_return = ending_equity ** (252 / n_days) - 1.0 if n_days else np.nan
     annualized_volatility = daily_returns["net_return"].std(ddof=0) * np.sqrt(252)
     sharpe = annualized_return / annualized_volatility if annualized_volatility > 0 else np.nan
     rolling_max = daily_returns["equity_curve"].cummax()
