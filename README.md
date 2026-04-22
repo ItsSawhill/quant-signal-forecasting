@@ -215,7 +215,7 @@ python src/train.py --model ridge --task regression --target-mode cross_sectiona
 - [outputs/metrics/ridge_regression_cross_sectional_rank_quantile_returns.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_quantile_returns.csv)
 - [outputs/metrics/ridge_regression_cross_sectional_rank_quantile_spread_returns.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_quantile_spread_returns.csv)
 
-## Resume-Ready Highlights
+## Highlights
 
 - Built an end-to-end cross-sectional equity signal research pipeline spanning data ingestion, feature engineering, rank-target labeling, walk-forward training, portfolio construction, and benchmark-aware backtesting.
 - Extended a simple ETF forecasting demo into a more realistic quant research workflow with cross-sectional ranking targets, factor-style features, and configurable long/short portfolio mechanics.
