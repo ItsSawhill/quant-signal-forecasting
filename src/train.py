@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from backtest import run_backtest, save_backtest_outputs
-from data_loader import BENCHMARK_TICKER, DEFAULT_START_DATE, DEFAULT_TICKERS, download_market_data
+from data_loader import BENCHMARK_TICKER, DEFAULT_START_DATE, DEFAULT_TICKERS, get_market_data
 from evaluate import (
     compute_bucket_returns,
     compute_classification_metrics,
@@ -16,7 +16,7 @@ from evaluate import (
     plot_predicted_vs_realized,
     save_metrics,
 )
-from features import FEATURE_COLUMNS, create_features
+from features import EXTENDED_FEATURE_COLUMNS, FEATURE_COLUMNS, create_features
 from labels import create_labels
 from models import extract_feature_importance, fit_and_predict
 from portfolio import attach_positions, build_positions
@@ -28,20 +28,37 @@ PREDICTIONS_DIR = ROOT / "outputs" / "predictions"
 METRICS_DIR = ROOT / "outputs" / "metrics"
 
 
+def get_target_column(task: str, target_mode: str, horizon: int) -> str:
+    if task == "classification":
+        return f"forward_return_binary_{horizon}d"
+    if target_mode == "cross_sectional_rank":
+        return f"forward_return_rank_{horizon}d"
+    return f"forward_return_{horizon}d"
+
+
+def get_realized_return_column(horizon: int) -> str:
+    return f"forward_return_{horizon}d"
+
+
 def build_modeling_dataset(
     tickers: list[str],
     start_date: str,
     end_date: str | None,
     horizon: int,
     benchmark_ticker: str,
+    feature_set: str = "baseline",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    market_data = download_market_data(
+    market_data = get_market_data(
         tickers=tickers,
         start_date=start_date,
         end_date=end_date,
         benchmark_ticker=benchmark_ticker,
     )
-    featured = create_features(market_data, benchmark_ticker=benchmark_ticker)
+    featured = create_features(
+        market_data,
+        benchmark_ticker=benchmark_ticker,
+        include_phase4_features=feature_set == "extended",
+    )
     labeled = create_labels(featured, horizon=horizon, ranking_universe=tickers)
     dataset = labeled[labeled["asset"].isin(tickers)].copy()
 
@@ -99,6 +116,8 @@ def walk_forward_predictions(
             continue
 
         checkpoint_path = METRICS_DIR / f"{run_prefix}_mlp_checkpoint.pt"
+        train_group = fit_frame.groupby("date").size().tolist()
+        val_group = val_frame.groupby("date").size().tolist()
         model, preds = fit_and_predict(
             model_name=model_name,
             task=task,
@@ -108,6 +127,8 @@ def walk_forward_predictions(
             y_val=val_frame[target_column],
             x_test=test_frame[feature_columns],
             checkpoint_path=checkpoint_path,
+            train_group=train_group,
+            val_group=val_group,
         )
         last_model = model
         fold_predictions = test_frame[["date", "asset", "forward_return", "next_day_return"]].copy()
@@ -129,10 +150,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--benchmark-ticker", default=BENCHMARK_TICKER)
     parser.add_argument("--start-date", default=DEFAULT_START_DATE)
     parser.add_argument("--end-date", default=None)
-    parser.add_argument("--horizon", type=int, default=5)
+    parser.add_argument("--horizon", type=int, choices=[5, 10, 20], default=5)
     parser.add_argument("--task", choices=["regression", "classification"], default="regression")
     parser.add_argument("--target-mode", choices=["forward_return", "cross_sectional_rank"], default="cross_sectional_rank")
-    parser.add_argument("--model", choices=["ridge", "tree", "mlp"], default="ridge")
+    parser.add_argument("--model", choices=["ridge", "tree", "mlp", "ranker"], default="ridge")
     parser.add_argument("--test-size", type=int, default=63, help="Number of daily observations per out-of-sample block.")
     parser.add_argument("--min-train-size", type=int, default=252, help="Minimum number of daily observations before walk-forward testing.")
     parser.add_argument("--top-k", type=int, default=5)
@@ -144,12 +165,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     parser.add_argument("--holding-horizon", type=int, default=5)
     parser.add_argument("--rebalance-frequency", type=int, default=None)
+    parser.add_argument("--feature-set", choices=["baseline", "extended"], default="baseline")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    target_label = args.target_mode
+    if args.model == "ranker":
+        if args.task != "regression":
+            raise ValueError("The ranker model only supports regression task mode.")
+        if args.target_mode != "cross_sectional_rank":
+            raise ValueError("The ranker model only supports the cross_sectional_rank target.")
+
+    target_label = f"{args.target_mode}_h{args.horizon}"
     run_prefix = f"{args.model}_{args.task}_{target_label}"
     PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
@@ -160,18 +188,16 @@ def main() -> None:
         end_date=args.end_date,
         horizon=args.horizon,
         benchmark_ticker=args.benchmark_ticker,
+        feature_set=args.feature_set,
     )
-    feature_columns = [col for col in FEATURE_COLUMNS if col in dataset.columns]
+    base_feature_columns = EXTENDED_FEATURE_COLUMNS if args.feature_set == "extended" else FEATURE_COLUMNS
+    feature_columns = [col for col in base_feature_columns if col in dataset.columns]
 
-    if args.task == "classification":
-        target_column = "forward_return_binary"
-    elif args.target_mode == "cross_sectional_rank":
-        target_column = "forward_return_rank"
-    else:
-        target_column = "forward_return"
-
-    required_columns = feature_columns + [target_column, "forward_return", "next_day_return"]
+    target_column = get_target_column(task=args.task, target_mode=args.target_mode, horizon=args.horizon)
+    realized_return_column = get_realized_return_column(args.horizon)
+    required_columns = feature_columns + [target_column, realized_return_column, "next_day_return"]
     dataset = dataset.dropna(subset=required_columns).copy()
+    dataset["forward_return"] = dataset[realized_return_column]
 
     predictions, last_model = walk_forward_predictions(
         dataset=dataset,

@@ -73,6 +73,32 @@ DEFAULT_TICKERS = [
 ]
 
 
+def _filter_cached_market_data(
+    data: pd.DataFrame,
+    tickers: Iterable[str] | None,
+    start_date: str,
+    end_date: str | None,
+    benchmark_ticker: str,
+) -> pd.DataFrame:
+    universe = list(dict.fromkeys(tickers or DEFAULT_TICKERS))
+    symbols = set(universe if benchmark_ticker in universe else universe + [benchmark_ticker])
+    frame = data.copy()
+    frame["date"] = pd.to_datetime(frame["date"])
+    frame = frame[frame["asset"].isin(symbols)].copy()
+    frame = frame[frame["date"] >= pd.Timestamp(start_date)]
+    if end_date is not None:
+        frame = frame[frame["date"] <= pd.Timestamp(end_date)]
+    if frame.empty:
+        raise ValueError("Cached market data is empty after applying the requested filters.")
+
+    available_assets = set(frame["asset"].unique())
+    missing_assets = symbols - available_assets
+    if missing_assets:
+        missing = ", ".join(sorted(missing_assets))
+        raise ValueError(f"Cached market data is missing requested assets: {missing}")
+    return frame.sort_values(["asset", "date"]).reset_index(drop=True)
+
+
 def download_market_data(
     tickers: Iterable[str] | None = None,
     start_date: str = DEFAULT_START_DATE,
@@ -136,6 +162,47 @@ def load_market_data(path: Path | None = None) -> pd.DataFrame:
         raise FileNotFoundError(f"Market data file not found: {target_path}")
     data = pd.read_csv(target_path, parse_dates=["date"])
     return data.sort_values(["asset", "date"]).reset_index(drop=True)
+
+
+def get_market_data(
+    tickers: Iterable[str] | None = None,
+    start_date: str = DEFAULT_START_DATE,
+    end_date: str | None = None,
+    output_path: Path | None = None,
+    benchmark_ticker: str = BENCHMARK_TICKER,
+    prefer_cache: bool = True,
+) -> pd.DataFrame:
+    """Load cached data when available, otherwise download fresh data."""
+    target_path = output_path or DATA_DIR / "market_data.csv"
+    if prefer_cache and target_path.exists():
+        cached = load_market_data(target_path)
+        return _filter_cached_market_data(
+            cached,
+            tickers=tickers,
+            start_date=start_date,
+            end_date=end_date,
+            benchmark_ticker=benchmark_ticker,
+        )
+
+    try:
+        return download_market_data(
+            tickers=tickers,
+            start_date=start_date,
+            end_date=end_date,
+            output_path=target_path,
+            benchmark_ticker=benchmark_ticker,
+        )
+    except Exception:
+        if prefer_cache and target_path.exists():
+            cached = load_market_data(target_path)
+            return _filter_cached_market_data(
+                cached,
+                tickers=tickers,
+                start_date=start_date,
+                end_date=end_date,
+                benchmark_ticker=benchmark_ticker,
+            )
+        raise
 
 
 if __name__ == "__main__":

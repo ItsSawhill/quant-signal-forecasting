@@ -1,178 +1,141 @@
 # quant-signal-forecasting
 
-`quant-signal-forecasting` is a portfolio-ready quant research project for cross-sectional equity signal modeling. v2 extends the original ETF demo into a more realistic research workflow with a larger equity universe, rank-based targets, richer factor-style features, configurable long/short portfolio construction, and benchmark-aware evaluation.
+`quant-signal-forecasting` is a research-oriented Python repository for cross-sectional equity signal forecasting, ranking-aware modeling, portfolio construction, and implementation-aware validation.
 
-## Overview
+The project studies a central question:
 
-This repository is designed to demonstrate research process rather than marketable alpha. The emphasis is on:
+> Can direct cross-sectional ranking across multiple horizons produce more implementable equity signals than standard regression baselines after turnover and transaction costs?
 
-- leakage-aware feature and label construction
-- chronological walk-forward validation
-- cross-sectional ranking rather than point forecast marketing
-- realistic interpretation of weak but plausible signal evidence
-- clear artifacts for review: metrics, notebook analysis, and benchmark-aware backtests
+The final conclusion is deliberately conservative. The repository finds evidence of a weak cross-sectional ranking signal, especially in information-coefficient and quantile-spread metrics, but the signal is not robust or economically meaningful enough to support a tradable-alpha claim in the current setup.
 
-## Key Takeaways
+## Project Scope
 
-- v2 moves the project from ETF forecasting into a more relevant cross-sectional equity research setup.
-- Cross-sectional rank targets are more aligned with quant portfolio construction than raw return regression alone.
-- The latest verified v2 run shows weak but plausible signal quality: slightly positive mean IC and directionally sensible quantile spreads, but negative after-cost performance versus `SPY`.
-- This is a research framework, not a deployable strategy, and the README is written to reflect that directly.
+The repository is designed as a reproducible research framework, not a production trading system. It includes:
 
-## What Changed In v2
+- market data ingestion from `yfinance`
+- leakage-aware feature engineering
+- forward-return and cross-sectional rank target construction
+- ridge, tree, MLP, and ranking-aware model options
+- walk-forward validation
+- configurable long/short portfolio construction
+- transaction-cost-aware backtesting
+- robustness, placebo, and signal-to-implementation validation studies
+- a full paper draft and phase-by-phase research notes
 
-Compared with v1, the project now supports:
+## Main Findings
 
-- a larger liquid U.S. equity universe instead of only sector/index ETFs
-- cross-sectional ranking targets in addition to raw forward-return targets
-- richer research features including rolling beta, rolling correlation, downside volatility, volatility-adjusted momentum, and cross-sectional z-scores
-- quantile portfolios, signal-weighted portfolios, configurable gross exposure, and turnover controls
-- less overlapping portfolio construction via configurable rebalance frequency
-- stronger evaluation artifacts including IC by date, quantile return spreads, rolling Sharpe, and benchmark comparison
+- Ranking-aware learning improves cross-sectional ordering quality relative to tree regression baselines, but it is not a universal after-cost winner.
+- Portfolio construction choices explain more variation in realized performance than the remaining model differences.
+- Small market-relative feature additions slightly improve signal metrics, but do not materially improve implemented returns.
+- Robustness checks show strong regime dependence: results are negative in early subperiods and positive only in the most recent regime.
+- Statistical validation supports a weak signal in IC terms, but portfolio-level bootstrap intervals remain too wide to justify an economic alpha claim.
+- The signal-to-implementation decomposition shows that predictive structure is attenuated between ranking quality and realized net return.
 
-## Research Question
+## Repository Structure
 
-Can simple tabular models learn a useful cross-sectional signal from price-and-volume features across a liquid U.S. equity universe, and is a rank-based learning target more useful for long/short research than forecasting raw forward returns directly?
-
-## Why Ranking Matters
-
-For cross-sectional equity research, the exact return forecast is often less important than the relative ordering of names on each date. Rank-based targets are more aligned with how many quant portfolios are actually built:
-
-- signals are used to sort names into long and short baskets
-- small forecast misspecification matters less if relative ordering is preserved
-- information coefficient and quantile spread are often more informative than raw error alone
-
-v2 therefore supports both raw forward-return targets and cross-sectional rank targets, with `cross_sectional_rank` as the default research path.
-
-## Default v2 Setup
-
-- Universe: 58 liquid U.S. large-cap equities
-- Benchmark: `SPY`
-- Default history: `2018-01-01` to present
-- Label horizon: next 5 trading days
-- Default target: cross-sectional rank of next 5-day forward return
-- Default model: `ridge`
-- Default portfolio: signal-weighted long top decile / short bottom decile
-- Default controls: one-day implementation lag, turnover cap, transaction costs, benchmark-aware reporting
-
-## Methodology
-
-### Universe
-
-The v2 universe is a laptop-friendly basket of liquid U.S. large-cap stocks across technology, healthcare, financials, consumer, industrials, and energy. The benchmark `SPY` is downloaded alongside the universe for relative features and benchmark comparison.
-
-### Features
-
-The feature set now includes both time-series and cross-sectional signals:
-
-- trailing returns: `1d`, `5d`, `10d`, `20d`
-- rolling volatility: `5d`, `20d`
-- momentum and moving-average gaps
-- rolling volume z-score
-- rolling Sharpe proxy
-- drawdown from 20-day high
-- downside volatility
-- rolling beta to `SPY`
-- rolling correlation to `SPY`
-- volatility-adjusted momentum
-- cross-sectional z-scored versions of selected features
-
-### Targets
-
-Supported targets:
-
-- `forward_return`: raw next 5-day return
-- `cross_sectional_rank`: daily cross-sectional rank of next 5-day return
-- `forward_return_binary`: classification label for positive next 5-day return
-
-### Validation And Leakage Controls
-
-The core chronology controls from v1 remain in place:
-
-- features use trailing windows only
-- model features are shifted by one day before training
-- train/validation/test splits are expanding and chronological
-- positions are lagged by one day before PnL application
-- the written leakage review remains available in [outputs/metrics/leakage_alignment_audit.md](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/leakage_alignment_audit.md)
-
-## Key Results From The Verified v2 Run
-
-The latest verified v2 run used:
-
-```bash
-python src/train.py --model ridge --task regression --target-mode cross_sectional_rank
+```text
+quant-signal-forecasting/
+├── docs/                 # Phase notes and research documentation
+├── notebooks/            # Review notebook
+├── outputs/
+│   ├── figures/          # Selected research figures
+│   └── metrics/          # Selected metrics and summary tables
+├── reports/              # Research paper draft and report artifacts
+├── src/                  # Core pipeline and research commands
+├── README.md
+└── requirements.txt
 ```
 
-Actual outputs from that run:
+## Data And Universe
 
-- prediction metrics in `outputs/metrics/ridge_regression_cross_sectional_rank_metrics_summary.csv`
-- backtest metrics in `outputs/metrics/ridge_regression_cross_sectional_rank_backtest_metrics.csv`
-- IC series in `outputs/metrics/ridge_regression_cross_sectional_rank_ic_by_date.csv`
-- quantile return summaries in `outputs/metrics/ridge_regression_cross_sectional_rank_quantile_returns.csv`
-- quantile spread series in `outputs/metrics/ridge_regression_cross_sectional_rank_quantile_spread_returns.csv`
+The default research universe is a laptop-friendly basket of 58 liquid U.S. large-cap equities, with `SPY` used as the market benchmark and relative-feature reference. The default research window begins on `2018-01-01`.
 
-Headline metrics from the verified run:
+Data is sourced from `yfinance`, which is appropriate for a reproducible research demonstration but not sufficient for institutional-grade trading research. The project notes survivorship, data-quality, and execution-model limitations explicitly.
 
-| Metric | Value |
-| --- | ---: |
-| RMSE | 0.2891 |
-| MAE | 0.2501 |
-| Target Correlation | 0.0146 |
-| Spearman Rank Correlation | 0.0113 |
-| Mean Daily IC | 0.0088 |
-| Annualized Return | -0.0105 |
-| Annualized Volatility | 0.0904 |
-| Sharpe Ratio | -0.1160 |
-| Max Drawdown | -0.3469 |
-| Average Turnover | 0.0323 |
-| Benchmark Annualized Return (`SPY`) | 0.1538 |
+## Features
 
-Quantile results are directionally encouraging:
+The baseline feature set includes:
 
-- mean realized return increases from the bottom decile to the top decile
-- top decile mean return: `0.00537`
-- bottom decile mean return: `0.00383`
+- trailing returns over `1d`, `5d`, `10d`, and `20d`
+- rolling volatility over `5d` and `20d`
+- momentum and moving-average gaps
+- rolling volume z-scores
+- rolling Sharpe proxy
+- drawdown from a 20-day high
+- downside volatility
+- rolling beta and correlation to `SPY`
+- volatility-adjusted momentum
+- cross-sectional z-scored variants of selected features
 
-But the after-cost portfolio result is still negative in this default configuration, which is the correct interpretation to keep front and center.
+Phase 4 adds a small controlled set of market-relative features:
 
-## Interpretation
+- residual return vs `SPY`
+- rolling excess return vs `SPY`
+- beta-adjusted momentum
 
-What v2 improves:
+## Targets
 
-- the research setup is much closer to a real cross-sectional equity signal pipeline
-- rank-based targets are more aligned with long/short portfolio construction
-- the new feature set better reflects common quant factor engineering patterns
-- the backtest now uses next-day realized returns with held positions instead of booking only overlapping horizon returns
+Supported target modes include:
 
-What the latest results say:
+- `forward_return`: raw forward return
+- `cross_sectional_rank`: centered cross-sectional percentile rank of forward return
+- `forward_return_binary`: positive-forward-return classification target
 
-- the signal is weak but not random: mean IC is slightly positive and quantile returns are directionally monotonic
-- the default ridge rank model is not yet strong enough to overcome costs and beat the benchmark
-- v2 is therefore a stronger research project even though the default backtest outcome is not flattering
+The main research path uses `cross_sectional_rank` because it is aligned with long/short equity ranking and quantile portfolio construction.
 
-That is a stronger portfolio outcome than an unrealistically strong backtest claim, because it shows research depth and technical honesty.
+## Models
 
-## Portfolio Construction In v2
+The implemented model options are:
 
-Portfolio construction now supports:
+- `ridge`: linear regression/classification baseline
+- `tree`: tree-based nonlinear baseline
+- `mlp`: lightweight tabular MLP path
+- `ranker`: ranking-aware learner for cross-sectional rank targets
 
-- `topk` or `quantile` portfolio selection
-- `equal` or `signal` weighting
+The project intentionally avoids adding larger architectures such as transformers or reinforcement-learning agents because later phases show that the main bottleneck is implementation and robustness, not model capacity.
+
+## Validation And Backtesting
+
+The pipeline uses chronological walk-forward validation. Features are based on trailing windows, model inputs are shifted to avoid lookahead, and positions are lagged before applying next-day returns.
+
+Portfolio construction supports:
+
+- quantile and top-k selection
+- equal and signal weighting
 - configurable gross exposure
-- configurable turnover cap
 - configurable rebalance frequency
+- optional turnover cap
+- linear transaction costs
 
-The default v2 run uses a signal-weighted quantile portfolio with a turnover cap, which is more realistic than the original overlapping equal-weight approximation.
+Backtests report annualized return, volatility, Sharpe ratio, max drawdown, turnover, benchmark comparison, and return per unit turnover where applicable.
 
-## Limitations
+## Research Phases
 
-Remaining realism caveats are explicit:
+The final project is organized into six research phases:
 
-- this is still a research-grade backtest, not an execution-grade simulator
-- `yfinance` is acceptable for research demos but not institutional data engineering
-- benchmark comparison versus `SPY` is informative, but not a like-for-like comparison against a market-neutral strategy
-- no borrow fees, slippage model, or path-level execution engine is included
-- no hyperparameter search or nested research protocol is included
+| Phase | Purpose | Summary |
+| --- | --- | --- |
+| Phase 0 | Baseline freeze | Freezes the v2 benchmark before further changes. |
+| Phase 1 | Multi-horizon study | Tests `5d`, `10d`, and `20d` rank targets. |
+| Phase 2 | Ranking-aware learning | Compares tree regression with a ranking-aware learner. |
+| Phase 3 | Portfolio construction sensitivity | Tests selection, weighting, rebalance, and turnover controls. |
+| Phase 4 | Controlled feature research | Adds a small market-relative feature extension. |
+| Phase 5 | Robustness analysis | Tests subperiods, transaction costs, and small portfolio variations. |
+| Phase 6 | Statistical validation | Adds IC significance, bootstrap, placebo, cost-sweep, and rolling-stability checks. |
+
+The project also includes a final signal-to-implementation decomposition that summarizes how signal quality is attenuated from IC to quantile spread to realized net return.
+
+## Key Artifacts
+
+- Phase notes: `docs/`
+- Paper draft: `reports/quant_signal_paper_draft.md`
+- Baseline freeze: `docs/v3_baseline_freeze.md`
+- Phase 6 validation note: `docs/v3_phase6_validation_note.md`
+- Signal-to-implementation note: `docs/v3_signal_to_implementation_gap_note.md`
+- Signal decomposition table: `outputs/metrics/signal_to_implementation_decomposition.md`
+- Portfolio sensitivity figure: `outputs/figures/phase3_portfolio_sensitivity_best_configs.png`
+- Subperiod robustness figure: `outputs/figures/phase5_subperiod_sharpe.png`
+- Signal decomposition figure: `outputs/figures/signal_to_implementation_stage_decay.png`
 
 ## How To Run
 
@@ -184,49 +147,44 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run the default v2 experiment:
+Run the default pipeline:
 
 ```bash
 python src/train.py --model ridge --task regression --target-mode cross_sectional_rank
 ```
 
-Run raw forward-return regression instead of rank-based learning:
+Run the multi-horizon study:
 
 ```bash
-python src/train.py --model ridge --task regression --target-mode forward_return
+python src/research.py horizon-study --target-mode cross_sectional_rank --models ridge tree mlp --horizons 5 10 20
 ```
 
-Try an alternative portfolio configuration:
+Run the ranking-aware study:
 
 ```bash
-python src/train.py --model ridge --task regression --target-mode cross_sectional_rank --portfolio-mode topk --top-k 10 --weight-scheme equal --max-turnover 0.25
+python src/research.py ranking-study
 ```
 
-## Key Files
+Run the final validation layer:
 
-- [src/train.py](/Users/sahil/Desktop/quant-signal-forecasting/src/train.py)
-- [src/features.py](/Users/sahil/Desktop/quant-signal-forecasting/src/features.py)
-- [src/labels.py](/Users/sahil/Desktop/quant-signal-forecasting/src/labels.py)
-- [src/portfolio.py](/Users/sahil/Desktop/quant-signal-forecasting/src/portfolio.py)
-- [src/backtest.py](/Users/sahil/Desktop/quant-signal-forecasting/src/backtest.py)
-- [outputs/metrics/ridge_regression_cross_sectional_rank_metrics_summary.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_metrics_summary.csv)
-- [outputs/metrics/ridge_regression_cross_sectional_rank_backtest_metrics.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_backtest_metrics.csv)
-- [outputs/metrics/ridge_regression_cross_sectional_rank_ic_by_date.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_ic_by_date.csv)
-- [outputs/metrics/ridge_regression_cross_sectional_rank_quantile_returns.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_quantile_returns.csv)
-- [outputs/metrics/ridge_regression_cross_sectional_rank_quantile_spread_returns.csv](/Users/sahil/Desktop/quant-signal-forecasting/outputs/metrics/ridge_regression_cross_sectional_rank_quantile_spread_returns.csv)
+```bash
+python src/research.py phase6-validation-study
+```
 
-## Highlights
+Run the signal-to-implementation decomposition:
 
-- Built an end-to-end cross-sectional equity signal research pipeline spanning data ingestion, feature engineering, rank-target labeling, walk-forward training, portfolio construction, and benchmark-aware backtesting.
-- Extended a simple ETF forecasting demo into a more realistic quant research workflow with cross-sectional ranking targets, factor-style features, and configurable long/short portfolio mechanics.
-- Evaluated weak but plausible signal quality using information coefficient, quantile spread analysis, and benchmark comparison while explicitly documenting leakage controls and realism caveats.
+```bash
+python src/research.py signal-gap-study
+```
 
-## What Still Belongs In v3
+## Limitations
 
-If this were taken beyond portfolio/demo scope, the next steps would be:
+- Data comes from `yfinance`; this is not institutional-grade data.
+- The universe is static and may contain survivorship bias.
+- The backtest uses simplified linear transaction costs and does not model borrow fees, slippage, or execution queues.
+- Benchmark comparison to `SPY` is informative but not a complete risk-matched comparison.
+- The final positive behavior is regime-dependent and not robust across all subperiods.
 
-- more robust universe maintenance and delisting handling
-- sector/industry neutralization
-- benchmark-relative and residual return targets
-- rolling hyperparameter search
-- a cleaner separation between signal evaluation and execution simulation
+## Final Interpretation
+
+This repository does not claim to discover deployable alpha. Its contribution is a controlled, reproducible research study showing that weak cross-sectional signals can pass prediction-oriented checks while still failing implementation, robustness, and economic significance tests.

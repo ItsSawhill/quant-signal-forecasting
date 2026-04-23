@@ -21,6 +21,7 @@ def create_features(
     price_data: pd.DataFrame,
     benchmark_ticker: str = "SPY",
     include_market_relative: bool = True,
+    include_phase4_features: bool = False,
 ) -> pd.DataFrame:
     """Create no-lookahead time-series and cross-sectional features."""
     frame = price_data.copy().sort_values(["asset", "date"])
@@ -52,13 +53,16 @@ def create_features(
     frame["downside_vol_20d"] = grouped["daily_return"].transform(lambda s: s.clip(upper=0).rolling(20).std(ddof=0))
     frame["vol_adjusted_momentum_20d"] = frame["ret_20d"] / frame["vol_20d"].replace(0, np.nan)
 
-    benchmark_returns = (
-        frame.loc[frame["asset"] == benchmark_ticker, ["date", "daily_return"]]
-        .rename(columns={"daily_return": "benchmark_return_1d"})
-        .sort_values("date")
-    )
+    benchmark_only = frame.loc[frame["asset"] == benchmark_ticker, ["date", "close", "daily_return"]].copy().sort_values("date")
+    benchmark_returns = benchmark_only.rename(columns={"daily_return": "benchmark_return_1d"})
+    benchmark_returns["benchmark_return_5d"] = benchmark_returns["close"].pct_change(5)
+    benchmark_returns["benchmark_return_20d"] = benchmark_returns["close"].pct_change(20)
     benchmark_returns["benchmark_var_20d"] = benchmark_returns["benchmark_return_1d"].rolling(20).var(ddof=0)
-    frame = frame.merge(benchmark_returns, on="date", how="left")
+    frame = frame.merge(
+        benchmark_returns[["date", "benchmark_return_1d", "benchmark_return_5d", "benchmark_return_20d", "benchmark_var_20d"]],
+        on="date",
+        how="left",
+    )
     frame["return_x_benchmark"] = frame["daily_return"] * frame["benchmark_return_1d"]
     grouped = frame.groupby("asset", group_keys=False)
 
@@ -74,6 +78,15 @@ def create_features(
 
     if include_market_relative:
         frame["market_relative_ret_1d"] = frame["ret_1d"] - frame["benchmark_return_1d"]
+
+    if include_phase4_features:
+        # Residualized daily return strips out the beta-scaled market move.
+        frame["residual_return_vs_spy_1d"] = frame["ret_1d"] - frame["beta_to_spy_20d"] * frame["benchmark_return_1d"]
+        # Excess-return features compare stock momentum directly against SPY over the same horizon.
+        frame["excess_return_vs_spy_5d"] = frame["ret_5d"] - frame["benchmark_return_5d"]
+        frame["excess_return_vs_spy_20d"] = frame["ret_20d"] - frame["benchmark_return_20d"]
+        # Beta-adjusted momentum keeps long-horizon strength but removes estimated market exposure.
+        frame["beta_adjusted_momentum_20d"] = frame["ret_20d"] - frame["beta_to_spy_20d"] * frame["benchmark_return_20d"]
 
     raw_feature_cols = [
         "ret_1d",
@@ -96,6 +109,15 @@ def create_features(
     ]
     if include_market_relative:
         raw_feature_cols.append("market_relative_ret_1d")
+    if include_phase4_features:
+        raw_feature_cols.extend(
+            [
+                "residual_return_vs_spy_1d",
+                "excess_return_vs_spy_5d",
+                "excess_return_vs_spy_20d",
+                "beta_adjusted_momentum_20d",
+            ]
+        )
 
     cross_sectional_base = [
         "ret_5d",
@@ -148,4 +170,12 @@ FEATURE_COLUMNS = [
     "beta_to_spy_20d_xs_z",
     "corr_to_spy_20d_xs_z",
     "vol_adjusted_momentum_20d_xs_z",
+]
+
+
+EXTENDED_FEATURE_COLUMNS = FEATURE_COLUMNS + [
+    "residual_return_vs_spy_1d",
+    "excess_return_vs_spy_5d",
+    "excess_return_vs_spy_20d",
+    "beta_adjusted_momentum_20d",
 ]

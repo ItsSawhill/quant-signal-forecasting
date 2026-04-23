@@ -1,11 +1,16 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.DS_Store
 *.pyc
 *.pyo
 *.pyd
 *.pt
 *.parquet
+docs/internal/
+reports/*.aux
+reports/*.log
+reports/*.out
 data/market_data.csv
 data/modeling_dataset.csv
 data/modeling_dataset.parquet

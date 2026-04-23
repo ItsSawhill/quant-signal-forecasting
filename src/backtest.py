@@ -30,6 +30,7 @@ def run_backtest(
     daily_returns["turnover"] = daily_returns["turnover"].fillna(0.0)
     daily_returns["transaction_cost"] = daily_returns["turnover"] * (transaction_cost_bps / 10000.0)
     daily_returns["net_return"] = daily_returns["gross_return"] - daily_returns["transaction_cost"]
+    daily_returns["gross_equity_curve"] = (1.0 + daily_returns["gross_return"]).cumprod()
     daily_returns["equity_curve"] = (1.0 + daily_returns["net_return"]).cumprod()
 
     if benchmark_returns is not None and not benchmark_returns.empty:
@@ -43,7 +44,9 @@ def run_backtest(
     ) * np.sqrt(252)
 
     n_days = len(daily_returns)
+    ending_gross_equity = float(daily_returns["gross_equity_curve"].iloc[-1]) if n_days else 1.0
     ending_equity = float(daily_returns["equity_curve"].iloc[-1]) if n_days else 1.0
+    annualized_gross_return = ending_gross_equity ** (252 / n_days) - 1.0 if n_days else np.nan
     annualized_return = ending_equity ** (252 / n_days) - 1.0 if n_days else np.nan
     annualized_volatility = daily_returns["net_return"].std(ddof=0) * np.sqrt(252)
     sharpe = annualized_return / annualized_volatility if annualized_volatility > 0 else np.nan
@@ -51,12 +54,14 @@ def run_backtest(
     max_drawdown = (daily_returns["equity_curve"] / rolling_max - 1.0).min()
 
     metrics = {
+        "annualized_gross_return": float(annualized_gross_return),
         "annualized_return": float(annualized_return),
         "annualized_volatility": float(annualized_volatility),
         "sharpe_ratio": float(sharpe),
         "max_drawdown": float(max_drawdown),
         "average_turnover": float(daily_returns["turnover"].mean()),
         "rolling_sharpe_63d_mean": float(daily_returns["rolling_sharpe_63d"].mean(skipna=True)),
+        "return_per_unit_turnover": float(annualized_return / daily_returns["turnover"].mean()) if daily_returns["turnover"].mean() > 0 else np.nan,
     }
 
     if "benchmark_next_day_return" in daily_returns.columns:

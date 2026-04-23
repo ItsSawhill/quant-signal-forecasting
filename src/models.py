@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,51 @@ except ImportError:  # pragma: no cover
     spearmanr = None
 
 RANDOM_STATE = 42
+
+
+class XGBRankerWrapper:
+    """Minimal wrapper around XGBoost ranker with preprocessing."""
+
+    def __init__(self) -> None:
+        try:
+            import xgboost as xgb
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError("XGBoost is required for the ranker model.") from exc
+
+        self.xgb = xgb
+        self.imputer = SimpleImputer(strategy="median")
+        self.model = xgb.XGBRanker(
+            n_estimators=150,
+            max_depth=3,
+            learning_rate=0.05,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            objective="rank:pairwise",
+            n_jobs=1,
+            random_state=RANDOM_STATE,
+        )
+
+    def fit(
+        self,
+        x_train: pd.DataFrame,
+        y_train: pd.Series,
+        train_group: list[int],
+        x_val: pd.DataFrame | None = None,
+        y_val: pd.Series | None = None,
+        val_group: list[int] | None = None,
+    ) -> "XGBRankerWrapper":
+        x_train_arr = self.imputer.fit_transform(x_train)
+        fit_kwargs: dict[str, Any] = {"group": train_group, "verbose": False}
+        self.model.fit(x_train_arr, y_train.values, **fit_kwargs)
+        return self
+
+    def predict(self, x: pd.DataFrame) -> np.ndarray:
+        x_arr = self.imputer.transform(x)
+        return self.model.predict(x_arr)
+
+    @property
+    def feature_importances_(self) -> np.ndarray:
+        return self.model.feature_importances_
 
 
 def get_torch_modules() -> tuple[Any, Any, Any, Any]:
@@ -218,13 +264,26 @@ class TorchMLPWrapper:
 def build_mlp_model(task: str, input_dim: int, checkpoint_path: Path) -> Any:
     """Build a PyTorch MLP when available, otherwise a sklearn fallback."""
     torch, _, _, _ = get_torch_modules()
-    if torch is not None:
+    use_torch_mlp = os.environ.get("USE_TORCH_MLP", "0") == "1"
+    if use_torch_mlp and torch is not None:
         return TorchMLPWrapper(task=task, input_dim=input_dim, checkpoint_path=checkpoint_path)
 
     estimator = (
-        MLPRegressor(hidden_layer_sizes=(64, 32), early_stopping=True, random_state=RANDOM_STATE, max_iter=300)
+        MLPRegressor(
+            hidden_layer_sizes=(32,),
+            early_stopping=True,
+            random_state=RANDOM_STATE,
+            max_iter=20,
+            n_iter_no_change=10,
+        )
         if task == "regression"
-        else MLPClassifier(hidden_layer_sizes=(64, 32), early_stopping=True, random_state=RANDOM_STATE, max_iter=300)
+        else MLPClassifier(
+            hidden_layer_sizes=(32,),
+            early_stopping=True,
+            random_state=RANDOM_STATE,
+            max_iter=20,
+            n_iter_no_change=10,
+        )
     )
     return Pipeline(
         [
@@ -244,6 +303,8 @@ def fit_and_predict(
     y_val: pd.Series,
     x_test: pd.DataFrame,
     checkpoint_path: Path,
+    train_group: list[int] | None = None,
+    val_group: list[int] | None = None,
 ) -> tuple[Any, np.ndarray]:
     """Fit a model and return out-of-sample predictions."""
     if model_name in {"ridge", "tree"}:
@@ -253,6 +314,16 @@ def fit_and_predict(
             preds = model.predict_proba(x_test)[:, 1]
         else:
             preds = model.predict(x_test)
+        return model, np.asarray(preds)
+
+    if model_name == "ranker":
+        if task != "regression":
+            raise ValueError("Ranking-aware model currently supports regression-style ranking targets only.")
+        if train_group is None or val_group is None:
+            raise ValueError("Ranker requires per-date group sizes for train and validation data.")
+        model = XGBRankerWrapper()
+        model.fit(x_train=x_train, y_train=y_train, train_group=train_group, x_val=x_val, y_val=y_val, val_group=val_group)
+        preds = model.predict(x_test)
         return model, np.asarray(preds)
 
     if model_name == "mlp":
@@ -270,7 +341,7 @@ def fit_and_predict(
 
 def extract_feature_importance(model: Any, feature_names: list[str]) -> pd.DataFrame | None:
     """Extract feature importance when the underlying model exposes it."""
-    inner_model = model.named_steps["model"] if hasattr(model, "named_steps") else model
+    inner_model = model.named_steps["model"] if hasattr(model, "named_steps") else getattr(model, "model", model)
     importances = getattr(inner_model, "feature_importances_", None)
     if importances is None:
         return None
